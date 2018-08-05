@@ -13,7 +13,10 @@ case class UserClient(clientId: Long, followers: List[Long], connection: ActorRe
   def removeFollower(followerId: Long): UserClient = copy(followers = followers.filter(_ != followerId))
 
   def sendEvent(event: Event) =  {
-    connection ! Write(ByteString(Event.toPayload(event)))
+    val payload = Event.toPayload(event)
+    val payloadWithCrlf = s"$payload${Utils.crlf}"
+    println(s"Sending $payloadWithCrlf")
+    connection ! Write(ByteString(s"$payload${Utils.crlf}"))
   }
 
 }
@@ -26,7 +29,6 @@ class UserClientsManager extends Actor with ActorLogging {
 
   IO(Tcp) ! Bind(self, new InetSocketAddress( "0.0.0.0", 9099))
 
-
   def receive = {
     case b @ Bound(localAddress) =>
       log.info("Bound")
@@ -38,9 +40,8 @@ class UserClientsManager extends Actor with ActorLogging {
     case c @ Connected(remote, local) =>
       log.info(s"Connection received from hostname: ${remote.getHostName} address: ${remote.getAddress.toString}")
       val connection = sender()
-      sender() ! Write(ByteString("OK!"))
-      val client = context.actorOf(UserClientSocketHandler.props(self, connection))
-      connection ! Register(client)
+      val handler = context.actorOf(UserClientSocketHandler.props(self, connection))
+      connection ! Register(handler)
 
     case BatchEvents(events) => {
       events.foreach {
@@ -49,19 +50,15 @@ class UserClientsManager extends Actor with ActorLogging {
             clients = clients.updated(client.clientId, client.addFollower(e.fromUserId))
             client.sendEvent(e)
           }
-          clients.foreach { case (_, client) => client.sendEvent(e)}
         case e: UnFollow =>
           clients.get(e.toUserId).foreach { client =>
             clients = clients.updated(client.clientId, client.removeFollower(e.fromUserId))
           }
-          clients.foreach { case (_, client) => client.sendEvent(e)}
         case e: Broadcast =>
           clients.foreach { case (_, client) => client.sendEvent(e) }
-          clients.foreach { case (_, client) => client.sendEvent(e)}
 
         case e: PrivateMessage =>
           clients.get(e.toUserId).foreach(_.sendEvent(e))
-          clients.foreach { case (_, client) => client.sendEvent(e)}
 
         case e: StatusUpdate =>
           clients.get(e.fromUserId).foreach { client =>
@@ -69,7 +66,6 @@ class UserClientsManager extends Actor with ActorLogging {
               clients.get(followerId).foreach(_.sendEvent(e))
             }
           }
-          clients.foreach { case (_, client) => client.sendEvent(e)}
       }
     }
 
@@ -96,7 +92,6 @@ class UserClientSocketHandler(userClientsManager: ActorRef, connection: ActorRef
 
   private var clientId: Long = -1
 
-  val CRLF = sys.props("line.separator")
   log.info("UserClient Actor started")
 
   def receive = {
@@ -104,7 +99,6 @@ class UserClientSocketHandler(userClientsManager: ActorRef, connection: ActorRef
       clientId = data.decodeString("utf-8").trim.toLong
       userClientsManager ! RegisterClientConnection(clientId, connection)
       log.info(s"Received $data")
-      sender() ! data
 
     case PeerClosed =>
       userClientsManager ! UnRegisterClientConnection(clientId)

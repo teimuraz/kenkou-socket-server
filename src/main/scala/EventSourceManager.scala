@@ -24,8 +24,8 @@ class EventSourceManager(userClientsManager: ActorRef) extends Actor with ActorL
 
     case c @ Connected(remote, local) =>
       log.info(s"Connection received from hostname: ${remote.getHostName} address: ${remote.getAddress.toString}")
-      val handler = context.actorOf(EventSourceHandler.props(userClientsManager))
       val connection = sender()
+      val handler = context.actorOf(EventSourceHandler.props(userClientsManager))
       connection ! Register(handler)
   }
 }
@@ -42,9 +42,8 @@ class EventSourceHandler(userClientsManager: ActorRef) extends Actor with ActorL
     case Received(data) =>
       val batchStr = data.decodeString("utf-8")
 
-      val CRLF = sys.props("line.separator")
       val eventsOrdered: List[Event] = batchStr
-        .split(CRLF)
+        .split(Utils.crlf)
         .map(Event.fromPayload)
         .sortBy(_.sequenceNumber)
         .toList
