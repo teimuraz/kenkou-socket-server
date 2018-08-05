@@ -6,26 +6,18 @@ import Tcp._
 import UserClientsManager.{BatchEvents, RegisterClientConnection, UnRegisterClientConnection}
 import akka.util.ByteString
 
-case class UserClient(clientId: Long, followers: List[Long], connection: ActorRef) {
-
-  def addFollower(followerId: Long): UserClient = copy(followers = followers :+ followerId)
-
-  def removeFollower(followerId: Long): UserClient = copy(followers = followers.filter(_ != followerId))
-
+case class UserClient(connection: ActorRef) {
   def sendEvent(event: Event): Unit = connection ! Write(ByteString(Event.toPayload(event)))
-
 }
 
 class UserClientsManager extends Actor with ActorLogging {
   import context.system
 
-  private var clients: Map[Long, UserClient] = Map.empty
+  private var connectedClients: Map[Long, ActorRef] = Map.empty
   private var clientFollowers: Map[Long, List[Long]] = Map.empty
 
 
   IO(Tcp) ! Bind(self, new InetSocketAddress( "0.0.0.0", 9099))
-
-  private var lastSeqNumber: Long = 0
 
   def receive = {
     case b @ Bound(localAddress) =>
@@ -43,8 +35,8 @@ class UserClientsManager extends Actor with ActorLogging {
     case BatchEvents(events) => {
       events.foreach {
         case e: Follow =>
-          clients.get(e.toUserId).foreach { client =>
-            client.sendEvent(e)
+          connectedClients.get(e.toUserId).foreach { connection =>
+            sendEvent(connection, e)
           }
 
           clientFollowers = clientFollowers.get(e.toUserId) match {
@@ -53,52 +45,35 @@ class UserClientsManager extends Actor with ActorLogging {
           }
 
         case e: UnFollow =>
-//          clients.get(e.toUserId).foreach { client =>
-//            clients = clients.updated(client.clientId, client.removeFollower(e.fromUserId))
-//          }
-
-
           clientFollowers.get(e.toUserId).foreach { followers =>
             clientFollowers = clientFollowers.updated(e.toUserId, followers.filter(_ != e.fromUserId))
           }
 
         case e: Broadcast =>
-          clients.foreach { case (_, client) => client.sendEvent(e) }
+          connectedClients.foreach { case (_, connection) => sendEvent(connection, e) }
 
         case e: PrivateMessage =>
-          clients.get(e.toUserId).foreach(_.sendEvent(e))
+          connectedClients.get(e.toUserId).foreach(connetion => sendEvent(connetion, e))
 
         case e: StatusUpdate =>
-//          clients.get(e.fromUserId).foreach { client =>
-//            client.followers.foreach { followerId =>
-//              clients.get(followerId).foreach(_.sendEvent(e))
-//            }
-//          }
           clientFollowers.get(e.fromUserId).foreach { followerIds =>
             followerIds.foreach { followerId =>
-              clients.get(followerId).foreach(_.sendEvent(e))
+              connectedClients.get(followerId).foreach(connection => sendEvent(connection, e))
             }
           }
-//          clients.get(e.fromUserId).foreach { client =>
-//            client.followers.foreach { followerId =>
-//              clients.get(followerId).foreach(_.sendEvent(e))
-//            }
-//          }
       }
     }
 
     case RegisterClientConnection(clientId, connection) =>
-      clients = clients + (clientId -> UserClient(clientId, List.empty, connection))
+      connectedClients = connectedClients + (clientId -> connection)
 
     case UnRegisterClientConnection(clientId) =>
-      clients = clients - clientId
+      connectedClients = connectedClients - clientId
       // Update followers list for each client removing disconnected client
-      clients = clients.mapValues(client => client.removeFollower(clientId))
       clientFollowers = clientFollowers.mapValues(followers => followers.filter(_ != clientId))
-//      clientFollowers.get(e.toUserId).foreach { followers =>
-//        clientFollowers = clientFollowers.updated(e.toUserId, followers.filter(_ != e.fromUserId))
-//      }
   }
+
+  def sendEvent(connection: ActorRef, event: Event): Unit = connection ! Write(ByteString(Event.toPayload(event)))
 }
 
 object UserClientsManager {
