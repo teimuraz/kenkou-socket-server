@@ -15,7 +15,6 @@ case class UserClient(clientId: Long, followers: List[Long], connection: ActorRe
   def sendEvent(event: Event) =  {
     val payload = Event.toPayload(event)
     val payloadWithCrlf = s"$payload${Utils.crlf}"
-    println(s"Sending $payloadWithCrlf")
     connection ! Write(ByteString(s"$payload${Utils.crlf}"))
   }
 
@@ -62,7 +61,7 @@ class UserClientsManager extends Actor with ActorLogging {
 
         case e: StatusUpdate =>
           clients.get(e.fromUserId).foreach { client =>
-            client.followers.foreach { followerId =>
+            client.followers foreach { followerId =>
               clients.get(followerId).foreach(_.sendEvent(e))
             }
           }
@@ -90,18 +89,21 @@ object UserClientsManager {
 
 class UserClientSocketHandler(userClientsManager: ActorRef, connection: ActorRef) extends Actor with ActorLogging {
 
-  private var clientId: Long = -1
+  private var clientId: Option[Long] = None
 
   log.info("UserClient Actor started")
 
   def receive = {
     case Received(data) =>
-      clientId = data.decodeString("utf-8").trim.toLong
-      userClientsManager ! RegisterClientConnection(clientId, connection)
-      log.info(s"Received $data")
+      clientId = Some(data.decodeString("utf-8").trim.toLong)
+      userClientsManager ! RegisterClientConnection(clientId.get, connection)
 
     case PeerClosed =>
-      userClientsManager ! UnRegisterClientConnection(clientId)
+      clientId match {
+        case Some(id) => userClientsManager ! UnRegisterClientConnection(id)
+        case None => log.warning("PeerClosed event received, but no client id is bound to socket handler")
+      }
+
       log.info("Peer closed")
       context.stop(self)
 
