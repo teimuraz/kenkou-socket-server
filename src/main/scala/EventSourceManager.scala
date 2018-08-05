@@ -4,8 +4,37 @@ import java.net.InetSocketAddress
 
 import Tcp._
 import UserClientsManager.BatchEvents
+import akka.util.ByteString
 
-class EventSourceSocket(userClientsManager: ActorRef) extends Actor with ActorLogging {
+
+class EventSourceManager(userClientsManager: ActorRef) extends Actor with ActorLogging {
+
+  import Tcp._
+  import context.system
+
+  IO(Tcp) ! Bind(self, new InetSocketAddress("0.0.0.0", 9090))
+
+  def receive = {
+    case b @ Bound( localAddress ) =>
+      log.info("Bound")
+
+    case CommandFailed(_: Bind) =>
+      log.info("Command failed.")
+      context.stop( self )
+
+    case c @ Connected(remote, local) =>
+      log.info(s"Connection received from hostname: ${remote.getHostName} address: ${remote.getAddress.toString}")
+      val handler = context.actorOf(EventSourceHandler.props(userClientsManager))
+      val connection = sender()
+      connection ! Register(handler)
+  }
+}
+
+object EventSourceManager {
+  def props(userClientsManager: ActorRef) = Props(classOf[EventSourceManager], userClientsManager)
+}
+
+class EventSourceHandler(userClientsManager: ActorRef) extends Actor with ActorLogging {
 
   log.info("Event source Actor started")
 
@@ -28,33 +57,7 @@ class EventSourceSocket(userClientsManager: ActorRef) extends Actor with ActorLo
   }
 }
 
-object EventSourceSocket {
-  def props(userClientsManager: ActorRef): Props = Props(classOf[EventSourceSocket], userClientsManager)
+object EventSourceHandler {
+  def props(userClientsManager: ActorRef): Props = Props(classOf[EventSourceHandler], userClientsManager)
 }
 
-class EventSourceManager(userClientsManager: ActorRef) extends Actor with ActorLogging {
-
-  import Tcp._
-  import context.system
-
-  IO(Tcp) ! Bind(self, new InetSocketAddress("0.0.0.0", 9090))
-
-  def receive = {
-    case b @ Bound( localAddress ) =>
-      log.info("Bound")
-
-    case CommandFailed(_: Bind) =>
-      log.info("Command failed.")
-      context.stop( self )
-
-    case c @ Connected(remote, local) =>
-      log.info(s"Connection received from hostname: ${remote.getHostName} address: ${remote.getAddress.toString}")
-      val handler = context.actorOf(EventSourceSocket.props(userClientsManager))
-      val connection = sender()
-      connection ! Register(handler)
-  }
-}
-
-object EventSourceManager {
-  def props(userClientsManager: ActorRef) = Props(classOf[EventSourceManager], userClientsManager)
-}
