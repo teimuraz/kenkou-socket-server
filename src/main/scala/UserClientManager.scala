@@ -20,6 +20,7 @@ class UserClientsManager extends Actor with ActorLogging {
   import context.system
 
   private var clients: Map[Long, UserClient] = Map.empty
+  private var clientFollowers: Map[Long, List[Long]] = Map.empty
 
 
   IO(Tcp) ! Bind(self, new InetSocketAddress( "0.0.0.0", 9099))
@@ -35,7 +36,6 @@ class UserClientsManager extends Actor with ActorLogging {
       context.stop(self)
 
     case c @ Connected(remote, local) =>
-      log.info(s"Connection received from hostname: ${remote.getHostName} address: ${remote.getAddress.toString}")
       val connection = sender()
       val handler = context.actorOf(UserClientSocketHandler.props(self, connection))
       connection ! Register(handler)
@@ -44,13 +44,22 @@ class UserClientsManager extends Actor with ActorLogging {
       events.foreach {
         case e: Follow =>
           clients.get(e.toUserId).foreach { client =>
-            clients = clients.updated(client.clientId, client.addFollower(e.fromUserId))
             client.sendEvent(e)
           }
 
+          clientFollowers = clientFollowers.get(e.toUserId) match {
+            case Some(f) => clientFollowers.updated(e.toUserId, f :+ e.fromUserId)
+            case None => clientFollowers + (e.toUserId -> List(e.fromUserId))
+          }
+
         case e: UnFollow =>
-          clients.get(e.toUserId).foreach { client =>
-            clients = clients.updated(client.clientId, client.removeFollower(e.fromUserId))
+//          clients.get(e.toUserId).foreach { client =>
+//            clients = clients.updated(client.clientId, client.removeFollower(e.fromUserId))
+//          }
+
+
+          clientFollowers.get(e.toUserId).foreach { followers =>
+            clientFollowers = clientFollowers.updated(e.toUserId, followers.filter(_ != e.fromUserId))
           }
 
         case e: Broadcast =>
@@ -60,11 +69,21 @@ class UserClientsManager extends Actor with ActorLogging {
           clients.get(e.toUserId).foreach(_.sendEvent(e))
 
         case e: StatusUpdate =>
-          clients.get(e.fromUserId).foreach { client =>
-            client.followers.foreach { followerId =>
+//          clients.get(e.fromUserId).foreach { client =>
+//            client.followers.foreach { followerId =>
+//              clients.get(followerId).foreach(_.sendEvent(e))
+//            }
+//          }
+          clientFollowers.get(e.fromUserId).foreach { followerIds =>
+            followerIds.foreach { followerId =>
               clients.get(followerId).foreach(_.sendEvent(e))
             }
           }
+//          clients.get(e.fromUserId).foreach { client =>
+//            client.followers.foreach { followerId =>
+//              clients.get(followerId).foreach(_.sendEvent(e))
+//            }
+//          }
       }
     }
 
@@ -75,6 +94,10 @@ class UserClientsManager extends Actor with ActorLogging {
       clients = clients - clientId
       // Update followers list for each client removing disconnected client
       clients = clients.mapValues(client => client.removeFollower(clientId))
+      clientFollowers = clientFollowers.mapValues(followers => followers.filter(_ != clientId))
+//      clientFollowers.get(e.toUserId).foreach { followers =>
+//        clientFollowers = clientFollowers.updated(e.toUserId, followers.filter(_ != e.fromUserId))
+//      }
   }
 }
 
@@ -90,8 +113,6 @@ object UserClientsManager {
 class UserClientSocketHandler(userClientsManager: ActorRef, connection: ActorRef) extends Actor with ActorLogging {
 
   private var clientId: Option[Long] = None
-
-  log.info("UserClient Actor started")
 
   def receive = {
     case Received(data) =>
