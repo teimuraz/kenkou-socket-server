@@ -12,11 +12,7 @@ case class UserClient(clientId: Long, followers: List[Long], connection: ActorRe
 
   def removeFollower(followerId: Long): UserClient = copy(followers = followers.filter(_ != followerId))
 
-  def sendEvent(event: Event) =  {
-    val payload = Event.toPayload(event)
-    val payloadWithCrlf = s"$payload${Utils.crlf}"
-    connection ! Write(ByteString(s"$payload${Utils.crlf}"))
-  }
+  def sendEvent(event: Event): Unit = connection ! Write(ByteString(Event.toPayload(event)))
 
 }
 
@@ -27,6 +23,8 @@ class UserClientsManager extends Actor with ActorLogging {
 
 
   IO(Tcp) ! Bind(self, new InetSocketAddress( "0.0.0.0", 9099))
+
+  private var lastSeqNumber: Long = 0
 
   def receive = {
     case b @ Bound(localAddress) =>
@@ -49,10 +47,12 @@ class UserClientsManager extends Actor with ActorLogging {
             clients = clients.updated(client.clientId, client.addFollower(e.fromUserId))
             client.sendEvent(e)
           }
+
         case e: UnFollow =>
           clients.get(e.toUserId).foreach { client =>
             clients = clients.updated(client.clientId, client.removeFollower(e.fromUserId))
           }
+
         case e: Broadcast =>
           clients.foreach { case (_, client) => client.sendEvent(e) }
 
@@ -61,7 +61,7 @@ class UserClientsManager extends Actor with ActorLogging {
 
         case e: StatusUpdate =>
           clients.get(e.fromUserId).foreach { client =>
-            client.followers foreach { followerId =>
+            client.followers.foreach { followerId =>
               clients.get(followerId).foreach(_.sendEvent(e))
             }
           }
@@ -103,13 +103,7 @@ class UserClientSocketHandler(userClientsManager: ActorRef, connection: ActorRef
         case Some(id) => userClientsManager ! UnRegisterClientConnection(id)
         case None => log.warning("PeerClosed event received, but no client id is bound to socket handler")
       }
-
-      log.info("Peer closed")
       context.stop(self)
-
-    case _ =>
-      log.info(s"Any")
-
   }
 }
 

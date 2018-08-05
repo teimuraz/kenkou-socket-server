@@ -17,12 +17,15 @@ object Event {
     }
   }
 
-  def toPayload(event: Event): String = event match {
-    case e: Follow => s"${e.sequenceNumber}|F|${e.fromUserId}|${e.toUserId}"
-    case e: UnFollow => s"${e.sequenceNumber}|U|${e.fromUserId}|${e.toUserId}"
-    case e: Broadcast => s"${e.sequenceNumber}|B"
-    case e: PrivateMessage => s"${e.sequenceNumber}|P|${e.fromUserId}|${e.toUserId}"
-    case e: StatusUpdate => s"${e.sequenceNumber}|S|${e.fromUserId}"
+  def toPayload(event: Event): String = {
+    val payload = event match {
+      case e: Follow => s"${e.sequenceNumber}|F|${e.fromUserId}|${e.toUserId}"
+      case e: UnFollow => s"${e.sequenceNumber}|U|${e.fromUserId}|${e.toUserId}"
+      case e: Broadcast => s"${e.sequenceNumber}|B"
+      case e: PrivateMessage => s"${e.sequenceNumber}|P|${e.fromUserId}|${e.toUserId}"
+      case e: StatusUpdate => s"${e.sequenceNumber}|S|${e.fromUserId}"
+    }
+    s"$payload${Utils.crlf}"
   }
 }
 
