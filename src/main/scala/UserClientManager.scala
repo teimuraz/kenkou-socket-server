@@ -29,19 +29,19 @@ class UserClientsManager extends Actor with ActorLogging {
   /**
    * Map user id to client connection
    */
-  private var connectedClients: Map[Long, ClientConnectionActor] = Map.empty
+  var connectedClients: Map[Long, ClientConnectionActor] = Map.empty
 
   /**
-   * Map user id to id of hes followers
+   * Map user id to id of his followers
    */
-  private var clientFollowers: Map[Long, List[Long]] = Map.empty
+  var clientFollowers: Map[Long, List[Long]] = Map.empty
 
 
   IO(Tcp) ! Bind(self, new InetSocketAddress( "0.0.0.0", 9099))
 
   def receive = {
     case b @ Bound(localAddress) =>
-      log.info("Bound")
+      log.info("User clients manager bound")
 
     case CommandFailed(_: Bind) =>
       log.info("Command failed.")
@@ -90,6 +90,7 @@ class UserClientsManager extends Actor with ActorLogging {
       }
     }
 
+    // Once user client connected to the server and sends its id, UserClientManager registers it
     case RegisterClientConnection(clientId, connection) =>
       connectedClients = connectedClients + (clientId -> connection)
 
@@ -106,8 +107,8 @@ object UserClientsManager {
   def props = Props(classOf[UserClientsManager])
 
   case class ProcessEvents(orderedEvents: List[Event])
-  case class RegisterClientConnection(clientId: Long, connection: ClientConnectionActor)
-  case class UnRegisterClientConnection(clientId: Long)
+  case class RegisterClientConnection(userId: Long, connection: ClientConnectionActor)
+  case class UnRegisterClientConnection(userId: Long)
 }
 
 

@@ -4,6 +4,6 @@ object Application extends App {
 
   val system = ActorSystem("EventServer")
   val userClientsManager = system.actorOf(UserClientsManager.props)
-  val eventSourceManager = system.actorOf(EventSourceManager.props(userClientsManager))
+  system.actorOf(EventSourceManager.props(UserClientsManagerActor(userClientsManager)))
 
 }
