@@ -12,13 +12,13 @@ import akka.util.ByteString
  * does not support them.
  * @param actor
  */
-case class ClientConnectionActor(actor: ActorRef)
+case class ClientConnectionHolder(actor: ActorRef)
 
 /**
  * Wrapper for "UserClientsManager" actor
  * @param actor
  */
-case class UserClientsManagerActor(actor: ActorRef)
+case class UserClientsManagerHolder(actor: ActorRef)
 
 /**
  * UserClientsManager is responsible for forwarding event source events to appropriate user clients.
@@ -29,7 +29,7 @@ class UserClientsManager extends Actor with ActorLogging {
   /**
    * Map user id to client connection
    */
-  var connectedClients: Map[Long, ClientConnectionActor] = Map.empty
+  var connectedClients: Map[Long, ClientConnectionHolder] = Map.empty
 
   /**
    * Map user id to id of his followers
@@ -48,9 +48,9 @@ class UserClientsManager extends Actor with ActorLogging {
       context.stop(self)
 
     case c @ Connected(remote, local) =>
-      val connection = ClientConnectionActor(sender())
-      val handler = context.actorOf(UserClientSocketHandler.props(UserClientsManagerActor(self), connection))
-      connection.actor ! Register(handler)
+      val connectionHolder = ClientConnectionHolder(sender())
+      val handler = context.actorOf(UserClientSocketHandler.props(UserClientsManagerHolder(self), connectionHolder))
+      connectionHolder.actor ! Register(handler)
 
     // Handle event source events
     case ProcessEvents(events) => {
@@ -58,8 +58,8 @@ class UserClientsManager extends Actor with ActorLogging {
 
         case e: Follow =>
           // Only the To User Id should be notified
-          connectedClients.get(e.toUserId).foreach { connection =>
-            sendEvent(connection, e)
+          connectedClients.get(e.toUserId).foreach { connectionHolder =>
+            sendEvent(connectionHolder, e)
           }
 
           // Update followers of toUserId
@@ -74,25 +74,25 @@ class UserClientsManager extends Actor with ActorLogging {
 
         case e: Broadcast =>
           // All connected user clients should be notified
-          connectedClients.foreach { case (_, connection) => sendEvent(connection, e) }
+          connectedClients.foreach { case (_, connectionHolder) => sendEvent(connectionHolder, e) }
 
         case e: PrivateMessage =>
           // Only the To User Id should be notified
-          connectedClients.get(e.toUserId).foreach(connection => sendEvent(connection, e))
+          connectedClients.get(e.toUserId).foreach(connectionHolder => sendEvent(connectionHolder, e))
 
         case e: StatusUpdate =>
           // All current followers of the From User ID should be notified
           clientFollowers.get(e.fromUserId).foreach { followerIds =>
             followerIds.foreach { followerId =>
-              connectedClients.get(followerId).foreach(connection => sendEvent(connection, e))
+              connectedClients.get(followerId).foreach(connectionHolder => sendEvent(connectionHolder, e))
             }
           }
       }
     }
 
     // Once user client connects to the server and sends its id, UserClientManager registers it
-    case RegisterClientConnection(clientId, connection) =>
-      connectedClients = connectedClients + (clientId -> connection)
+    case RegisterClientConnection(clientId, connectionHolder) =>
+      connectedClients = connectedClients + (clientId -> connectionHolder)
 
     case UnRegisterClientConnection(clientId) =>
       connectedClients = connectedClients - clientId
@@ -100,30 +100,35 @@ class UserClientsManager extends Actor with ActorLogging {
       clientFollowers = clientFollowers.mapValues(followers => followers.filter(_ != clientId))
   }
 
-  def sendEvent(connection: ClientConnectionActor, event: Event): Unit = connection.actor ! Write(ByteString(Event.toPayload(event)))
+  def sendEvent(connectionHolder: ClientConnectionHolder, event: Event): Unit = {
+    connectionHolder.actor ! Write(ByteString(Event.toPayload(event)))
+  }
 }
 
 object UserClientsManager {
   def props = Props(classOf[UserClientsManager])
 
   case class ProcessEvents(orderedEvents: List[Event])
-  case class RegisterClientConnection(userId: Long, connection: ClientConnectionActor)
+  case class RegisterClientConnection(userId: Long, connectionHolder: ClientConnectionHolder)
   case class UnRegisterClientConnection(userId: Long)
 }
 
 
-class UserClientSocketHandler(userClientsManager: UserClientsManagerActor, connection: ClientConnectionActor) extends Actor with ActorLogging {
+class UserClientSocketHandler(
+    userClientsManagerHolder: UserClientsManagerHolder,
+    connectionHolder: ClientConnectionHolder)
+  extends Actor with ActorLogging {
 
-  private var clientId: Option[Long] = None
+  var clientId: Option[Long] = None
 
   def receive = {
     case Received(data) =>
       clientId = Some(data.decodeString("utf-8").trim.toLong)
-      userClientsManager.actor ! RegisterClientConnection(clientId.get, connection)
+      userClientsManagerHolder.actor ! RegisterClientConnection(clientId.get, connectionHolder)
 
     case PeerClosed =>
       clientId match {
-        case Some(id) => userClientsManager.actor ! UnRegisterClientConnection(id)
+        case Some(id) => userClientsManagerHolder.actor ! UnRegisterClientConnection(id)
         case None => log.warning("PeerClosed event received, but no client id is bound to socket handler")
       }
       context.stop(self)
@@ -131,7 +136,6 @@ class UserClientSocketHandler(userClientsManager: UserClientsManagerActor, conne
 }
 
 object UserClientSocketHandler {
-  def props(userClientsManager: UserClientsManagerActor, connection: ClientConnectionActor) =
-    Props(classOf[UserClientSocketHandler], userClientsManager, connection)
+  def props(userClientsManager: UserClientsManagerHolder, connectionHolder: ClientConnectionHolder) =
+    Props(classOf[UserClientSocketHandler], userClientsManager, connectionHolder)
 }
-

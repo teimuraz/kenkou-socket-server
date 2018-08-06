@@ -1,11 +1,11 @@
 import akka.io.{IO, Tcp}
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, Props}
 import java.net.InetSocketAddress
 import Tcp._
 import UserClientsManager.ProcessEvents
 
 
-class EventSourceManager(userClientsManager: UserClientsManagerActor) extends Actor with ActorLogging {
+class EventSourceManager(userClientsManagerHolder: UserClientsManagerHolder) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -23,16 +23,17 @@ class EventSourceManager(userClientsManager: UserClientsManagerActor) extends Ac
     case c @ Connected(remote, local) =>
       log.info(s"Connection received from hostname: ${remote.getHostName} address: ${remote.getAddress.toString}")
       val connection = sender()
-      val handler = context.actorOf(EventSourceHandler.props(userClientsManager))
+      val handler = context.actorOf(EventSourceHandler.props(userClientsManagerHolder))
       connection ! Register(handler)
   }
 }
 
 object EventSourceManager {
-  def props(userClientsManager: UserClientsManagerActor) = Props(classOf[EventSourceManager], userClientsManager)
+  def props(userClientsManagerHolder: UserClientsManagerHolder) =
+    Props(classOf[EventSourceManager], userClientsManagerHolder)
 }
 
-class EventSourceHandler(userClientsManager: UserClientsManagerActor) extends Actor with ActorLogging {
+class EventSourceHandler(userClientsManagerHolder: UserClientsManagerHolder) extends Actor with ActorLogging {
 
   log.info("Event source Actor started")
 
@@ -46,7 +47,7 @@ class EventSourceHandler(userClientsManager: UserClientsManagerActor) extends Ac
         .sortBy(_.sequenceNumber)
         .toList
 
-      userClientsManager.actor ! ProcessEvents(orderedEvents)
+      userClientsManagerHolder.actor ! ProcessEvents(orderedEvents)
 
     case PeerClosed =>
       log.info("Event source Peer closed")
@@ -55,6 +56,7 @@ class EventSourceHandler(userClientsManager: UserClientsManagerActor) extends Ac
 }
 
 object EventSourceHandler {
-  def props(userClientsManager: UserClientsManagerActor): Props = Props(classOf[EventSourceHandler], userClientsManager)
+  def props(userClientsManagerHolder: UserClientsManagerHolder): Props =
+    Props(classOf[EventSourceHandler], userClientsManagerHolder)
 }
 
