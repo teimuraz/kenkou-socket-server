@@ -19,7 +19,7 @@ In separate terminal window
 ### Description
 The socket server is build with Akka TCP.
 
-Server listens to port 9099 through `UsersClientManager` actor.
+Server listens on port 9099 through `UsersClientManager` actor.
 
 
 Once new user client is connected, `UserClientManager` delegates event from connected user
@@ -29,7 +29,7 @@ User clients sends only 1 message, and this message is the id of user which conn
 After `UserClientSocketHandler` receives id of the user, it notifies `UsersClientManager`
 and `UsersClientManager` registers this new user client / connection.
 
-`UserClientManager` listens for user client's connection close event as well and unregisters that 
+`UserClientManager` listens for user client's connection close event as well and unregisters appropriate 
 client.
 
 
