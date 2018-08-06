@@ -3,8 +3,6 @@ Akka v2.15.4 is used to build socket server (Akka TCP)
  
 Scala version: 2.12.6
  
-To run the server, run:
- 
 ### How to run 
 
 #### Run server
