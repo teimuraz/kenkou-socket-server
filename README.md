@@ -41,7 +41,7 @@ to `EventSourceHandler`.
 `EventSourceHandler` receives events by batches, orders events in batch by sequence number and forwards those ordered events
 to `UsersClientManager` actor.
 
-Once received, `UsersClientManager` sends events user clients according to event payload (or ignores them in necessary).
+Once received, `UsersClientManager` sends events user clients according to event payload (or ignores them if necessary).
 
 
 
