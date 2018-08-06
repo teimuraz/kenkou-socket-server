@@ -90,7 +90,7 @@ class UserClientsManager extends Actor with ActorLogging {
       }
     }
 
-    // Once user client connected to the server and sends its id, UserClientManager registers it
+    // Once user client connects to the server and sends its id, UserClientManager registers it
     case RegisterClientConnection(clientId, connection) =>
       connectedClients = connectedClients + (clientId -> connection)
 
