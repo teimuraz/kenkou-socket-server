@@ -55,7 +55,6 @@ class UserClientsManager extends Actor with ActorLogging {
     // Handle event source events
     case ProcessEvents(events) => {
       events.foreach {
-
         case e: Follow =>
           // Only the To User Id should be notified
           connectedClients.get(e.toUserId).foreach { connectionHolder =>
@@ -93,11 +92,13 @@ class UserClientsManager extends Actor with ActorLogging {
     // Once user client connects to the server and sends its id, UserClientManager registers it
     case RegisterClientConnection(clientId, connectionHolder) =>
       connectedClients = connectedClients + (clientId -> connectionHolder)
+      log.info(s"Registered user client $clientId")
 
     case UnRegisterClientConnection(clientId) =>
       connectedClients = connectedClients - clientId
       // Update followers list for each client removing disconnected client
       clientFollowers = clientFollowers.mapValues(followers => followers.filter(_ != clientId))
+      log.info(s"Unregistered user client $clientId")
   }
 
   def sendEvent(connectionHolder: ClientConnectionHolder, event: Event): Unit = {
