@@ -3,7 +3,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import java.net.InetSocketAddress
 
 import Tcp._
-import UserClientsManager.BatchEvents
+import UserClientsManager.ProcessEvents
 import akka.util.ByteString
 
 
@@ -48,7 +48,7 @@ class EventSourceHandler(userClientsManager: ActorRef) extends Actor with ActorL
         .sortBy(_.sequenceNumber)
         .toList
 
-      userClientsManager ! BatchEvents(eventsOrdered)
+      userClientsManager ! ProcessEvents(eventsOrdered)
 
     case PeerClosed =>
       log.info("Event source Peer closed")
