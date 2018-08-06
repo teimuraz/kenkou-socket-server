@@ -2,6 +2,9 @@
 Akka v2.15.4 is used to build socket server (Akka TCP)
  
 Scala version: 2.12.6
+
+### Tests
+`sbt run test`
  
 ### How to run 
 
